@@ -6,14 +6,11 @@ per-request latency percentiles, warmup phase, variable payload shaping.
 """
 
 import asyncio
-import json
 import time
 import random
-import sys
 from pathlib import Path
 from typing import AsyncIterator, Dict, Any, Optional, List
 from dataclasses import dataclass, field
-from enum import Enum
 
 import httpx
 import aiofiles
@@ -29,6 +26,7 @@ console = Console()
 app = typer.Typer()
 
 SENTINEL = None  # poison pill for queue shutdown
+MAX_TRACE_BUFFER = 10000  # keep only last N traces for percentile calculation to prevent memory exhaustion
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +43,8 @@ class RequestTrace:
     input_tokens: int = 0
     output_tokens: int = 0
     status: str = "success"
+    error: Optional[str] = None             # error message / exception text, if failed
+    status_code: Optional[int] = None       # HTTP status code, if applicable
     is_warmup: bool = False
 
 
@@ -242,14 +242,25 @@ async def process_request_batch(
             if e.response.status_code == 429 and attempt < max_retries - 1:
                 await asyncio.sleep(2 ** attempt + random.random())
                 continue
-            return RequestTrace(id=task_id, latency_s=time.perf_counter() - t0, status="failed")
-        except Exception:
+            return RequestTrace(
+                id=task_id,
+                latency_s=time.perf_counter() - t0,
+                status="failed",
+                error=str(e),
+                status_code=e.response.status_code,
+            )
+        except Exception as e:
             if attempt < max_retries - 1:
                 await asyncio.sleep(2 ** attempt + random.random())
                 continue
-            return RequestTrace(id=task_id, latency_s=time.perf_counter() - t0, status="failed")
+            return RequestTrace(
+                id=task_id,
+                latency_s=time.perf_counter() - t0,
+                status="failed",
+                error=str(e),
+            )
 
-    return RequestTrace(id=task_id, latency_s=0.0, status="failed")
+    return RequestTrace(id=task_id, latency_s=0.0, status="failed", error="Max retries exceeded")
 
 
 async def process_request_stream(
@@ -339,14 +350,25 @@ async def process_request_stream(
             if e.response.status_code == 429 and attempt < max_retries - 1:
                 await asyncio.sleep(2 ** attempt + random.random())
                 continue
-            return RequestTrace(id=task_id, latency_s=time.perf_counter() - t0, status="failed")
-        except Exception:
+            return RequestTrace(
+                id=task_id,
+                latency_s=time.perf_counter() - t0,
+                status="failed",
+                error=str(e),
+                status_code=e.response.status_code,
+            )
+        except Exception as e:
             if attempt < max_retries - 1:
                 await asyncio.sleep(2 ** attempt + random.random())
                 continue
-            return RequestTrace(id=task_id, latency_s=time.perf_counter() - t0, status="failed")
+            return RequestTrace(
+                id=task_id,
+                latency_s=time.perf_counter() - t0,
+                status="failed",
+                error=str(e),
+            )
 
-    return RequestTrace(id=task_id, latency_s=0.0, status="failed")
+    return RequestTrace(id=task_id, latency_s=0.0, status="failed", error="Max retries exceeded")
 
 
 # ---------------------------------------------------------------------------
@@ -359,16 +381,17 @@ async def producer(
     num_consumers: int,
 ):
     """Feed tasks into the bounded queue. Send sentinel per consumer when done."""
-    if isinstance(tasks, list):
-        for t in tasks:
-            await queue.put(t)
-    else:
-        async for t in tasks:
-            await queue.put(t)
-
-    # Poison pills for each consumer
-    for _ in range(num_consumers):
-        await queue.put(SENTINEL)
+    try:
+        if isinstance(tasks, list):
+            for t in tasks:
+                await queue.put(t)
+        else:
+            async for t in tasks:
+                await queue.put(t)
+    finally:
+        # Poison pills for each consumer
+        for _ in range(num_consumers):
+            await queue.put(SENTINEL)
 
 
 async def consumer(
@@ -415,6 +438,9 @@ async def consumer(
                     stats.warmup_failed += 1
             else:
                 stats.traces.append(trace)
+                # Keep trace buffer bounded to prevent memory exhaustion in large runs
+                if len(stats.traces) > MAX_TRACE_BUFFER:
+                    stats.traces.pop(0)
                 if trace.status == "success":
                     stats.completed_requests += 1
                     stats.total_input_tokens += trace.input_tokens
@@ -472,9 +498,10 @@ def generate_stats_table(stats: Stats, streaming: bool) -> Table:
     table.add_row("─" * 24, "─" * 28)
     table.add_row("Elapsed", f"{elapsed:.1f}s")
     if stats.completed_requests > 0 and stats.requests_per_second > 0:
-        remaining = stats.total_requests - stats.completed_requests - stats.failed_requests
-        eta = remaining / stats.requests_per_second
-        table.add_row("ETA", f"{eta:.0f}s ({eta/60:.1f} min)")
+        remaining = max(stats.total_requests - warmup_total - measured_total, 0)
+        if remaining > 0:
+            eta = remaining / stats.requests_per_second
+            table.add_row("ETA", f"{eta:.0f}s ({eta/60:.1f} min)")
 
     return table
 
@@ -505,13 +532,19 @@ async def result_writer(
                     "latency_s": round(trace.latency_s, 4),
                     "input_tokens": trace.input_tokens,
                     "output_tokens": trace.output_tokens,
+                    "is_warmup": trace.is_warmup,
                 }
+                if trace.error is not None:
+                    record["error"] = trace.error
+                if trace.status_code is not None:
+                    record["status_code"] = trace.status_code
                 if trace.ttft_s is not None:
                     record["ttft_s"] = round(trace.ttft_s, 4)
                 if trace.itl_ms:
                     record["itl_mean_ms"] = round(np.mean(trace.itl_ms), 2)
                     record["itl_p99_ms"] = round(float(np.percentile(trace.itl_ms, 99)), 2)
                 await out_f.write(orjson.dumps(record).decode() + "\n")
+                await out_f.flush()
             written += 1
     finally:
         if out_f:
@@ -576,13 +609,13 @@ def run(
     \b
     Examples:
       # Synthetic mixed workload, streaming, 300 concurrent
-      python hyperinfer_stress.py -n 5000 -c 300 -s --rate-limit 1000
+      python client/stress_test.py -n 5000 -c 300 -s --rate-limit 1000
 
       # From JSONL file, non-streaming
-      python hyperinfer_stress.py -i prompts.jsonl -o results.jsonl -c 200
+      python client/stress_test.py -i prompts.jsonl -o results.jsonl -c 200
 
       # Long-prefill stress (decode-light)
-      python hyperinfer_stress.py -n 2000 -d long -c 100 -s
+      python client/stress_test.py -n 2000 -d long -c 100 -s
     """
     asyncio.run(_run_async(
         api_url=api_url,

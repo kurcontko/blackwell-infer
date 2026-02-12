@@ -7,7 +7,7 @@ help:
 	@echo "  make build-vllm        - Build vLLM Docker image (local arch)"
 	@echo "  make build-sglang      - Build SGLang Docker image (local arch)"
 	@echo "  make build-multi-vllm  - Build multi-arch vLLM Docker image"
-	@echo "  make build-multi-sglang- Build multi-arch SGLang Docker image"
+	@echo "  make build-multi-sglang - Build multi-arch SGLang Docker image"
 	@echo "  make test              - Run quick benchmark test"
 	@echo "  make calculator        - Run cost calculator"
 	@echo "  make clean             - Clean up generated files"
