@@ -25,7 +25,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --dev
+          uv pip install -e ".[dev]"
 
       - name: Run Ruff Linter
         run: |
@@ -57,7 +57,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --dev
+          uv pip install -e ".[dev]"
 
       - name: Run Tests
         run: |
@@ -93,7 +93,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --dev
+          uv pip install -e ".[dev]"
 
       - name: Run mypy
         run: |
