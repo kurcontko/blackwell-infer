@@ -6,9 +6,9 @@ Downloads and caches models to Network Volume for fast startup
 
 import os
 from pathlib import Path
-from typing import Optional
-from huggingface_hub import snapshot_download
+
 import typer
+from huggingface_hub import snapshot_download
 from rich.console import Console
 
 console = Console()
@@ -17,44 +17,28 @@ app = typer.Typer()
 
 @app.command()
 def download(
-    model_id: str = typer.Argument(
-        ...,
-        help="HuggingFace model ID (e.g., Qwen/Qwen2.5-235B-Instruct-FP4)"
-    ),
+    model_id: str = typer.Argument(..., help="HuggingFace model ID (e.g., Qwen/Qwen2.5-235B-Instruct-FP4)"),
     output_dir: Path = typer.Option(
-        Path("/workspace/models"),
-        "--output-dir", "-o",
-        help="Directory to save model (should be on Network Volume)"
+        Path("/workspace/models"), "--output-dir", "-o", help="Directory to save model (should be on Network Volume)"
     ),
     cache_dir: Path = typer.Option(
         Path("/workspace/hf_cache"),
-        "--cache-dir", "-c",
-        help="HuggingFace cache directory (enables deduplication across models)"
+        "--cache-dir",
+        "-c",
+        help="HuggingFace cache directory (enables deduplication across models)",
     ),
     no_cache: bool = typer.Option(
-        False,
-        "--no-cache",
-        help="Skip cache, download directly to output_dir (faster but no deduplication)"
+        False, "--no-cache", help="Skip cache, download directly to output_dir (faster but no deduplication)"
     ),
-    token: Optional[str] = typer.Option(
-        None,
-        "--token", "-t",
-        help="HuggingFace token for gated models (or set HF_TOKEN env var)"
+    token: str | None = typer.Option(
+        None, "--token", "-t", help="HuggingFace token for gated models (or set HF_TOKEN env var)"
     ),
-    revision: str = typer.Option(
-        "main",
-        "--revision", "-r",
-        help="Branch, tag, or commit hash"
-    ),
-    allow_patterns: Optional[list[str]] = typer.Option(
-        None,
-        "--allow", "-a",
-        help="Only download files matching these patterns (e.g., '*.safetensors')"
+    revision: str = typer.Option("main", "--revision", "-r", help="Branch, tag, or commit hash"),
+    allow_patterns: list[str] | None = typer.Option(
+        None, "--allow", "-a", help="Only download files matching these patterns (e.g., '*.safetensors')"
     ),
     ignore_patterns: list[str] = typer.Option(
-        ["*.gguf", "*.md", "consolidated.*"],
-        "--ignore", "-i",
-        help="Skip files matching these patterns"
+        ["*.gguf", "*.md", "consolidated.*"], "--ignore", "-i", help="Skip files matching these patterns"
     ),
 ):
     """
@@ -68,6 +52,7 @@ def download(
     # Enable HF Transfer for faster downloads (3-5x speedup)
     try:
         import hf_transfer  # noqa: F401
+
         os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
         console.print("[green]✓ hf_transfer enabled (fast downloads)[/green]")
     except ImportError:
@@ -78,9 +63,9 @@ def download(
     console.print(f"[yellow]Output directory: {output_dir}[/yellow]")
     if not no_cache:
         console.print(f"[yellow]Cache directory: {cache_dir}[/yellow]")
-        console.print(f"[dim]  (Cache enables deduplication across model downloads)[/dim]")
+        console.print("[dim]  (Cache enables deduplication across model downloads)[/dim]")
     else:
-        console.print(f"[dim]Cache disabled - direct download only[/dim]")
+        console.print("[dim]Cache disabled - direct download only[/dim]")
     console.print(f"[yellow]Revision: {revision}[/yellow]")
     if ignore_patterns:
         console.print(f"[dim]Ignoring: {', '.join(ignore_patterns)}[/dim]")
@@ -104,11 +89,13 @@ def download(
         console.print("[cyan]Downloading... (progress will appear below)[/cyan]\n")
 
         if no_cache:
-            # Direct download - faster, no deduplication
+            # Direct download - no separate cache dir to avoid duplicate storage
+            # Files download to default HF cache then copy to local_dir
             snapshot_download(
                 repo_id=model_id,
                 local_dir=str(local_dir),
-                cache_dir=str(local_dir),
+                # Note: cache_dir intentionally omitted to use default HF cache
+                # This avoids duplicate storage that could fill the volume
                 revision=revision,
                 resume_download=True,
                 max_workers=8,
@@ -133,9 +120,9 @@ def download(
                 ignore_patterns=ignore_patterns,
             )
 
-        console.print(f"\n[bold green]✓ Model downloaded successfully![/bold green]")
+        console.print("\n[bold green]✓ Model downloaded successfully![/bold green]")
         console.print(f"[green]Location: {local_dir}[/green]")
-        console.print(f"\n[yellow]Set this in your container:[/yellow]")
+        console.print("\n[yellow]Set this in your container:[/yellow]")
         console.print(f"[bold]MODEL_PATH={local_dir}[/bold]\n")
 
     except Exception as e:
@@ -145,10 +132,7 @@ def download(
 
 @app.command()
 def verify(
-    model_path: Path = typer.Argument(
-        ...,
-        help="Path to model directory to verify"
-    ),
+    model_path: Path = typer.Argument(..., help="Path to model directory to verify"),
 ):
     """
     Verify that a model directory is valid and complete.
@@ -160,7 +144,7 @@ def verify(
         console.print("[green]✓ config.json[/green]")
     else:
         console.print("[red]✗ config.json (missing)[/red]")
-        console.print(f"\n[bold red]✗ Model verification failed - config.json is required[/bold red]")
+        console.print("\n[bold red]✗ Model verification failed - config.json is required[/bold red]")
         raise typer.Exit(code=1)
 
     # Check for tokenizer files (different models use different formats)
@@ -171,7 +155,7 @@ def verify(
         found = [f for f in tokenizer_files if (model_path / f).exists()]
         console.print(f"[green]✓ Tokenizer files: {', '.join(found)}[/green]")
     else:
-        console.print(f"[yellow]⚠ No tokenizer files found (may be required)[/yellow]")
+        console.print("[yellow]⚠ No tokenizer files found (may be required)[/yellow]")
 
     # Check for weight files
     weight_patterns = ["*.safetensors", "*.bin"]
@@ -183,11 +167,11 @@ def verify(
         total_size_gb = sum(f.stat().st_size for f in weight_files) / 1e9
         console.print(f"[green]✓ Found {len(weight_files)} weight files ({total_size_gb:.2f} GB)[/green]")
     else:
-        console.print(f"[red]✗ No weight files found[/red]")
-        console.print(f"\n[bold red]✗ Model verification failed - no weight files[/bold red]")
+        console.print("[red]✗ No weight files found[/red]")
+        console.print("\n[bold red]✗ Model verification failed - no weight files[/bold red]")
         raise typer.Exit(code=1)
 
-    console.print(f"\n[bold green]✓ Model is valid and ready to use![/bold green]\n")
+    console.print("\n[bold green]✓ Model is valid and ready to use![/bold green]\n")
 
 
 if __name__ == "__main__":

@@ -6,21 +6,22 @@ per-request latency percentiles, warmup phase, variable payload shaping.
 """
 
 import asyncio
-import time
 import random
-from pathlib import Path
-from typing import AsyncIterator, Dict, Any, Optional, List
+import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
-import httpx
 import aiofiles
-import orjson
+import httpx
 import numpy as np
+import orjson
+import typer
 from aiolimiter import AsyncLimiter
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
-import typer
 
 console = Console()
 app = typer.Typer()
@@ -33,24 +34,27 @@ MAX_TRACE_BUFFER = 10000  # keep only last N traces for percentile calculation t
 # Stats
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RequestTrace:
     """Per-request timing record"""
+
     id: str
     latency_s: float
-    ttft_s: Optional[float] = None          # time-to-first-token (streaming only)
-    itl_ms: Optional[List[float]] = None    # inter-token latencies in ms
+    ttft_s: float | None = None  # time-to-first-token (streaming only)
+    itl_ms: list[float] | None = None  # inter-token latencies in ms
     input_tokens: int = 0
     output_tokens: int = 0
     status: str = "success"
-    error: Optional[str] = None             # error message / exception text, if failed
-    status_code: Optional[int] = None       # HTTP status code, if applicable
+    error: str | None = None  # error message / exception text, if failed
+    status_code: int | None = None  # HTTP status code, if applicable
     is_warmup: bool = False
 
 
 @dataclass
 class Stats:
     """Aggregated real-time statistics"""
+
     total_requests: int = 0
     completed_requests: int = 0
     failed_requests: int = 0
@@ -60,7 +64,7 @@ class Stats:
     total_output_tokens: int = 0
     start_time: float = 0.0
     request_count: int = 0  # total dispatched (for warmup tracking)
-    traces: List[RequestTrace] = field(default_factory=list)
+    traces: list[RequestTrace] = field(default_factory=list)
 
     # ---- derived metrics ----
 
@@ -80,7 +84,7 @@ class Stats:
     def requests_per_second(self) -> float:
         return self.completed_requests / self.elapsed
 
-    def latency_percentiles(self) -> Dict[str, float]:
+    def latency_percentiles(self) -> dict[str, float]:
         """Compute p50 / p95 / p99 from completed, non-warmup traces."""
         lats = [t.latency_s for t in self.traces if t.status == "success"]
         if not lats:
@@ -92,7 +96,7 @@ class Stats:
             "p99": float(np.percentile(arr, 99)),
         }
 
-    def ttft_percentiles(self) -> Dict[str, float]:
+    def ttft_percentiles(self) -> dict[str, float]:
         vals = [t.ttft_s for t in self.traces if t.ttft_s is not None and t.status == "success"]
         if not vals:
             return {"p50": 0.0, "p95": 0.0, "p99": 0.0}
@@ -103,7 +107,7 @@ class Stats:
             "p99": float(np.percentile(arr, 99)),
         }
 
-    def itl_percentiles(self) -> Dict[str, float]:
+    def itl_percentiles(self) -> dict[str, float]:
         vals = []
         for t in self.traces:
             if t.itl_ms and t.status == "success":
@@ -122,8 +126,9 @@ class Stats:
 # JSONL reader (streaming, low-memory)
 # ---------------------------------------------------------------------------
 
-async def read_jsonl(file_path: Path) -> AsyncIterator[Dict[str, Any]]:
-    async with aiofiles.open(file_path, "r") as f:
+
+async def read_jsonl(file_path: Path) -> AsyncIterator[dict[str, Any]]:
+    async with aiofiles.open(file_path) as f:
         async for line in f:
             stripped = line.strip()
             if stripped:
@@ -132,7 +137,7 @@ async def read_jsonl(file_path: Path) -> AsyncIterator[Dict[str, Any]]:
 
 async def count_lines(file_path: Path) -> int:
     count = 0
-    async with aiofiles.open(file_path, "r") as f:
+    async with aiofiles.open(file_path) as f:
         async for line in f:
             if line.strip():
                 count += 1
@@ -160,7 +165,7 @@ SYNTHETIC_PROMPTS = [
 def generate_synthetic_tasks(
     num_tasks: int,
     prompt_len_distribution: str = "mixed",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Generate synthetic tasks with variable prompt lengths and max_tokens.
     prompt_len_distribution: 'short' | 'long' | 'mixed'
@@ -173,10 +178,12 @@ def generate_synthetic_tasks(
             max_tokens = random.randint(32, 128)
         elif prompt_len_distribution == "long":
             # Pad prompt to simulate long prefill (capped to avoid memory explosion)
-            padding = " ".join(random.choices(
-                ["context", "information", "data", "relevant", "detail"],
-                k=random.randint(200, 500),  # capped at 500 words
-            ))
+            padding = " ".join(
+                random.choices(
+                    ["context", "information", "data", "relevant", "detail"],
+                    k=random.randint(200, 500),  # capped at 500 words
+                )
+            )
             base_prompt = f"Given the following context: {padding}\n\n{base_prompt}"
             max_tokens = random.randint(256, 1024)
         else:  # mixed
@@ -185,19 +192,23 @@ def generate_synthetic_tasks(
             elif random.random() < 0.7:
                 max_tokens = random.randint(64, 256)
             else:
-                padding = " ".join(random.choices(
-                    ["context", "information", "data", "relevant"],
-                    k=random.randint(100, 300),  # capped at 300 words
-                ))
+                padding = " ".join(
+                    random.choices(
+                        ["context", "information", "data", "relevant"],
+                        k=random.randint(100, 300),  # capped at 300 words
+                    )
+                )
                 base_prompt = f"Context: {padding}\n\n{base_prompt}"
                 max_tokens = random.randint(256, 1024)
 
-        tasks.append({
-            "id": str(i),
-            "prompt": base_prompt,
-            "max_tokens": max_tokens,
-            "temperature": random.choice([0.0, 0.0, 0.0, 0.7, 1.0]),  # mostly greedy
-        })
+        tasks.append(
+            {
+                "id": str(i),
+                "prompt": base_prompt,
+                "max_tokens": max_tokens,
+                "temperature": random.choice([0.0, 0.0, 0.0, 0.7, 1.0]),  # mostly greedy
+            }
+        )
     return tasks
 
 
@@ -205,10 +216,11 @@ def generate_synthetic_tasks(
 # Request processors (non-streaming & streaming)
 # ---------------------------------------------------------------------------
 
+
 async def process_request_batch(
     client: httpx.AsyncClient,
     api_url: str,
-    task: Dict[str, Any],
+    task: dict[str, Any],
     max_retries: int = 3,
 ) -> RequestTrace:
     """Non-streaming request with full latency tracking."""
@@ -240,7 +252,7 @@ async def process_request_batch(
             )
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429 and attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt + random.random())
+                await asyncio.sleep(2**attempt + random.random())
                 continue
             return RequestTrace(
                 id=task_id,
@@ -251,7 +263,7 @@ async def process_request_batch(
             )
         except Exception as e:
             if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt + random.random())
+                await asyncio.sleep(2**attempt + random.random())
                 continue
             return RequestTrace(
                 id=task_id,
@@ -266,7 +278,7 @@ async def process_request_batch(
 async def process_request_stream(
     client: httpx.AsyncClient,
     api_url: str,
-    task: Dict[str, Any],
+    task: dict[str, Any],
     max_retries: int = 3,
 ) -> RequestTrace:
     """Streaming SSE request with TTFT and inter-token latency tracking."""
@@ -282,9 +294,9 @@ async def process_request_stream(
 
     for attempt in range(max_retries):
         t0 = time.perf_counter()
-        ttft: Optional[float] = None
-        itl_timestamps: List[float] = []
-        output_text_chunks: List[str] = []
+        ttft: float | None = None
+        itl_timestamps: list[float] = []
+        output_text_chunks: list[str] = []
         input_tokens = 0
         output_tokens = 0
 
@@ -297,7 +309,7 @@ async def process_request_stream(
                     line = raw_line.strip()
                     if not line or not line.startswith("data:"):
                         continue
-                    data_str = line[len("data:"):].strip()
+                    data_str = line[len("data:") :].strip()
                     if data_str == "[DONE]":
                         break
 
@@ -327,7 +339,7 @@ async def process_request_stream(
             latency = time.perf_counter() - t0
 
             # Compute inter-token latencies
-            itl_ms: List[float] = []
+            itl_ms: list[float] = []
             for j in range(1, len(itl_timestamps)):
                 itl_ms.append((itl_timestamps[j] - itl_timestamps[j - 1]) * 1000.0)
 
@@ -348,7 +360,7 @@ async def process_request_stream(
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429 and attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt + random.random())
+                await asyncio.sleep(2**attempt + random.random())
                 continue
             return RequestTrace(
                 id=task_id,
@@ -359,7 +371,7 @@ async def process_request_stream(
             )
         except Exception as e:
             if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt + random.random())
+                await asyncio.sleep(2**attempt + random.random())
                 continue
             return RequestTrace(
                 id=task_id,
@@ -375,9 +387,10 @@ async def process_request_stream(
 # Producer-consumer pipeline (bounded memory)
 # ---------------------------------------------------------------------------
 
+
 async def producer(
     queue: asyncio.Queue,
-    tasks: AsyncIterator[Dict[str, Any]] | List[Dict[str, Any]],
+    tasks: AsyncIterator[dict[str, Any]] | list[dict[str, Any]],
     num_consumers: int,
 ):
     """Feed tasks into the bounded queue. Send sentinel per consumer when done."""
@@ -456,6 +469,7 @@ async def consumer(
 # Display
 # ---------------------------------------------------------------------------
 
+
 def generate_stats_table(stats: Stats, streaming: bool) -> Table:
     table = Table(title="Stress Test — Live Stats", expand=True)
     table.add_column("Metric", style="cyan", no_wrap=True)
@@ -480,15 +494,15 @@ def generate_stats_table(stats: Stats, streaming: bool) -> Table:
 
     table.add_row("─" * 24, "─" * 28)
     lp = stats.latency_percentiles()
-    table.add_row("Latency p50", f"{lp['p50']*1000:.1f} ms")
-    table.add_row("Latency p95", f"{lp['p95']*1000:.1f} ms")
-    table.add_row("Latency p99", f"{lp['p99']*1000:.1f} ms")
+    table.add_row("Latency p50", f"{lp['p50'] * 1000:.1f} ms")
+    table.add_row("Latency p95", f"{lp['p95'] * 1000:.1f} ms")
+    table.add_row("Latency p99", f"{lp['p99'] * 1000:.1f} ms")
 
     if streaming:
         tp = stats.ttft_percentiles()
-        table.add_row("TTFT p50", f"{tp['p50']*1000:.1f} ms")
-        table.add_row("TTFT p95", f"{tp['p95']*1000:.1f} ms")
-        table.add_row("TTFT p99", f"{tp['p99']*1000:.1f} ms")
+        table.add_row("TTFT p50", f"{tp['p50'] * 1000:.1f} ms")
+        table.add_row("TTFT p95", f"{tp['p95'] * 1000:.1f} ms")
+        table.add_row("TTFT p99", f"{tp['p99'] * 1000:.1f} ms")
 
         ip = stats.itl_percentiles()
         table.add_row("ITL p50", f"{ip['p50']:.2f} ms")
@@ -501,7 +515,7 @@ def generate_stats_table(stats: Stats, streaming: bool) -> Table:
         remaining = max(stats.total_requests - warmup_total - measured_total, 0)
         if remaining > 0:
             eta = remaining / stats.requests_per_second
-            table.add_row("ETA", f"{eta:.0f}s ({eta/60:.1f} min)")
+            table.add_row("ETA", f"{eta:.0f}s ({eta / 60:.1f} min)")
 
     return table
 
@@ -510,9 +524,10 @@ def generate_stats_table(stats: Stats, streaming: bool) -> Table:
 # Result writer
 # ---------------------------------------------------------------------------
 
+
 async def result_writer(
     results_queue: asyncio.Queue,
-    output_file: Optional[Path],
+    output_file: Path | None,
     total: int,
 ):
     """Drain results queue and write to JSONL."""
@@ -555,51 +570,72 @@ async def result_writer(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def run(
     api_url: str = typer.Option(
         "http://localhost:8000/v1/chat/completions",
-        "--api-url", "-u",
+        "--api-url",
+        "-u",
         help="OpenAI-compatible chat completions endpoint",
     ),
-    input_file: Optional[Path] = typer.Option(
-        None, "--input", "-i",
+    input_file: Path | None = typer.Option(
+        None,
+        "--input",
+        "-i",
         help="Input JSONL file. If omitted, synthetic prompts are generated.",
     ),
-    output_file: Optional[Path] = typer.Option(
-        None, "--output", "-o",
+    output_file: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
         help="Output JSONL with per-request traces.",
     ),
     num_synthetic: int = typer.Option(
-        1000, "--num-tasks", "-n",
+        1000,
+        "--num-tasks",
+        "-n",
         help="Number of synthetic tasks (only when --input is omitted).",
     ),
     prompt_distribution: str = typer.Option(
-        "mixed", "--distribution", "-d",
+        "mixed",
+        "--distribution",
+        "-d",
         help="Synthetic prompt length distribution: short | long | mixed",
     ),
     concurrent_requests: int = typer.Option(
-        200, "--concurrent", "-c",
+        200,
+        "--concurrent",
+        "-c",
         help="Number of concurrent consumer workers.",
     ),
     rate_limit: int = typer.Option(
-        500, "--rate-limit", "-r",
+        500,
+        "--rate-limit",
+        "-r",
         help="Max requests per second.",
     ),
     queue_size: int = typer.Option(
-        1000, "--queue-size", "-q",
+        1000,
+        "--queue-size",
+        "-q",
         help="Bounded task queue size (controls memory).",
     ),
     warmup: int = typer.Option(
-        10, "--warmup", "-w",
+        10,
+        "--warmup",
+        "-w",
         help="Number of warmup requests (excluded from percentiles).",
     ),
     streaming: bool = typer.Option(
-        False, "--stream", "-s",
+        False,
+        "--stream",
+        "-s",
         help="Use streaming SSE to measure TTFT and ITL.",
     ),
     max_retries: int = typer.Option(
-        3, "--max-retries",
+        3,
+        "--max-retries",
         help="Max retries per request on failure.",
     ),
 ):
@@ -617,25 +653,27 @@ def run(
       # Long-prefill stress (decode-light)
       python client/stress_test.py -n 2000 -d long -c 100 -s
     """
-    asyncio.run(_run_async(
-        api_url=api_url,
-        input_file=input_file,
-        output_file=output_file,
-        num_synthetic=num_synthetic,
-        prompt_distribution=prompt_distribution,
-        concurrent_requests=concurrent_requests,
-        rate_limit=rate_limit,
-        queue_size=queue_size,
-        warmup=warmup,
-        streaming=streaming,
-        max_retries=max_retries,
-    ))
+    asyncio.run(
+        _run_async(
+            api_url=api_url,
+            input_file=input_file,
+            output_file=output_file,
+            num_synthetic=num_synthetic,
+            prompt_distribution=prompt_distribution,
+            concurrent_requests=concurrent_requests,
+            rate_limit=rate_limit,
+            queue_size=queue_size,
+            warmup=warmup,
+            streaming=streaming,
+            max_retries=max_retries,
+        )
+    )
 
 
 async def _run_async(
     api_url: str,
-    input_file: Optional[Path],
-    output_file: Optional[Path],
+    input_file: Path | None,
+    output_file: Path | None,
     num_synthetic: int,
     prompt_distribution: str,
     concurrent_requests: int,
@@ -661,7 +699,7 @@ async def _run_async(
     # ---- Lock for atomic stats updates ----
     stats_lock = asyncio.Lock()
 
-    console.print(f"\n[bold green]Stress Test Config[/bold green]")
+    console.print("\n[bold green]Stress Test Config[/bold green]")
     console.print(f"  API:          {api_url}")
     console.print(f"  Streaming:    {streaming}")
     console.print(f"  Concurrency:  {concurrent_requests}")
@@ -690,25 +728,30 @@ async def _run_async(
             max_keepalive_connections=concurrent_requests,
         ),
     ) as client:
-
         # Start producer
-        prod = asyncio.create_task(
-            producer(task_queue, task_source, concurrent_requests)
-        )
+        prod = asyncio.create_task(producer(task_queue, task_source, concurrent_requests))
 
         # Start consumers
         consumers = [
-            asyncio.create_task(consumer(
-                task_queue, client, api_url, limiter, stats,
-                results_queue, streaming, stats_lock, warmup, max_retries,
-            ))
+            asyncio.create_task(
+                consumer(
+                    task_queue,
+                    client,
+                    api_url,
+                    limiter,
+                    stats,
+                    results_queue,
+                    streaming,
+                    stats_lock,
+                    warmup,
+                    max_retries,
+                )
+            )
             for _ in range(concurrent_requests)
         ]
 
         # Start result writer
-        writer = asyncio.create_task(
-            result_writer(results_queue, output_file, total)
-        )
+        writer = asyncio.create_task(result_writer(results_queue, output_file, total))
 
         # Live stats display
         with Live(generate_stats_table(stats, streaming), refresh_per_second=2, console=console) as live:
@@ -727,15 +770,21 @@ async def _run_async(
     console.print("═" * 64)
 
     lp = stats.latency_percentiles()
-    console.print(f"\n[bold]Latency  →  p50={lp['p50']*1000:.1f}ms  p95={lp['p95']*1000:.1f}ms  p99={lp['p99']*1000:.1f}ms[/bold]")
+    console.print(
+        f"\n[bold]Latency  →  p50={lp['p50'] * 1000:.1f}ms  p95={lp['p95'] * 1000:.1f}ms  p99={lp['p99'] * 1000:.1f}ms[/bold]"
+    )
 
     if streaming:
         tp = stats.ttft_percentiles()
         ip = stats.itl_percentiles()
-        console.print(f"[bold]TTFT     →  p50={tp['p50']*1000:.1f}ms  p95={tp['p95']*1000:.1f}ms  p99={tp['p99']*1000:.1f}ms[/bold]")
+        console.print(
+            f"[bold]TTFT     →  p50={tp['p50'] * 1000:.1f}ms  p95={tp['p95'] * 1000:.1f}ms  p99={tp['p99'] * 1000:.1f}ms[/bold]"
+        )
         console.print(f"[bold]ITL      →  p50={ip['p50']:.2f}ms   p95={ip['p95']:.2f}ms   p99={ip['p99']:.2f}ms[/bold]")
 
-    console.print(f"\n[bold green]✓ Done — {stats.completed_requests:,} succeeded, {stats.failed_requests:,} failed[/bold green]")
+    console.print(
+        f"\n[bold green]✓ Done — {stats.completed_requests:,} succeeded, {stats.failed_requests:,} failed[/bold green]"
+    )
     if output_file:
         console.print(f"[green]Traces saved to: {output_file}[/green]")
     console.print()

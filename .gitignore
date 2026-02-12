@@ -41,3 +41,8 @@ Thumbs.db
 
 # Docker
 *.log
+
+# Python build artifacts
+*.egg-info/
+dist/
+build/
