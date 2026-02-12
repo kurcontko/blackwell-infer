@@ -89,11 +89,13 @@ def download(
         console.print("[cyan]Downloading... (progress will appear below)[/cyan]\n")
 
         if no_cache:
-            # Direct download - faster, no deduplication
+            # Direct download - no separate cache dir to avoid duplicate storage
+            # Files download to default HF cache then copy to local_dir
             snapshot_download(
                 repo_id=model_id,
                 local_dir=str(local_dir),
-                cache_dir=str(local_dir),
+                # Note: cache_dir intentionally omitted to use default HF cache
+                # This avoids duplicate storage that could fill the volume
                 revision=revision,
                 resume_download=True,
                 max_workers=8,
