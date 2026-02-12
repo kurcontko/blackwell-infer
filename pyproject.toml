@@ -47,6 +47,7 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "N", "UP", "ASYNC", "S"]
 ignore = [
+    "E501",    # Allow long lines (mostly for display strings and console output)
     "S101",    # Allow assert in tests
     "S311",    # Allow random for non-cryptographic purposes (synthetic data generation)
     "S112",    # Allow try-except-continue (intentional for robust parsing)
