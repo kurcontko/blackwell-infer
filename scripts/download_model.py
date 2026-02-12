@@ -6,6 +6,7 @@ Downloads and caches models to Network Volume for fast startup
 
 import os
 from pathlib import Path
+from typing import Optional
 from huggingface_hub import snapshot_download
 import typer
 from rich.console import Console
@@ -35,7 +36,7 @@ def download(
         "--no-cache",
         help="Skip cache, download directly to output_dir (faster but no deduplication)"
     ),
-    token: str = typer.Option(
+    token: Optional[str] = typer.Option(
         None,
         "--token", "-t",
         help="HuggingFace token for gated models (or set HF_TOKEN env var)"
@@ -45,7 +46,7 @@ def download(
         "--revision", "-r",
         help="Branch, tag, or commit hash"
     ),
-    allow_patterns: list[str] = typer.Option(
+    allow_patterns: Optional[list[str]] = typer.Option(
         None,
         "--allow", "-a",
         help="Only download files matching these patterns (e.g., '*.safetensors')"
@@ -107,6 +108,7 @@ def download(
             snapshot_download(
                 repo_id=model_id,
                 local_dir=str(local_dir),
+                cache_dir=str(local_dir),
                 revision=revision,
                 resume_download=True,
                 max_workers=8,

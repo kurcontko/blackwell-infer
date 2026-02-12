@@ -95,12 +95,28 @@ uv run client/stress_test.py \
 
 ## Configuration
 
+### Common Variables (both backends)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MODEL_PATH` | `/workspace/models/qwen2.5-235b-instruct-fp4` | Model location |
 | `QUANTIZATION` | `modelopt_fp4` | Quantization (modelopt_fp4/fp8/int4) |
-| `TP_SIZE` | Auto | Tensor parallelism |
+| `TP_SIZE` | `2` | Tensor parallelism |
+| `KV_CACHE_DTYPE` | `fp8_e5m2` | KV cache quantization |
+
+### vLLM-specific Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GPU_MEM_UTIL` | `0.95` | Fraction of GPU memory to use for model + KV cache |
+| `MAX_MODEL_LEN` | `32768` | Maximum total sequence length (prompt + output) |
+| `MAX_NUM_BATCHED_TOKENS` | `8192` | Max tokens per batch across all requests |
+| `API_SERVER_COUNT` | `8` | Number of API server workers to run |
+
+### SGLang-specific Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEM_FRACTION` | `0.95` | Fraction of GPU memory to use |
 | `MAX_REQUESTS` | `1024` | Concurrent requests |
+| `CONTEXT_LENGTH` | `32768` | Maximum context length |
 
 ---
 

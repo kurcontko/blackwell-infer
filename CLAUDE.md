@@ -53,9 +53,9 @@ New GPU/model configs go in `configs/`. Use existing `b200_fp4.json` as template
 
 ## Known Pitfalls
 - **Do not skip checkpointing**: GPU crashes are common on long runs. Client must save state frequently.
-- **FP4 vs FP8**: B200 has native FP4 support, but vLLM may default to FP8. Always verify `QUANTIZATION=fp4` in env.
+- **FP4 vs FP8**: B200 has native FP4 support, but vLLM may default to FP8. Always verify `QUANTIZATION=modelopt_fp4` (repo default for FP4) in env.
 - **Tensor parallelism**: For models > 100B, TP_SIZE must match GPU count. Auto-detection can fail.
-- **Memory pressure**: Monitor GPU memory. If OOM occurs, reduce `MAX_REQUESTS` before reducing batch size.
+- **Memory pressure**: Monitor GPU memory. If OOM occurs, first tune vLLM env vars like `GPU_MEM_UTIL` and `API_SERVER_COUNT` (or `MAX_REQUESTS` for SGLang) before reducing batch size.
 
 ## Deployment Context
 - **Primary platform**: RunPod Serverless with 2x B200 GPUs
