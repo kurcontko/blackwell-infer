@@ -1,22 +1,22 @@
 # =============================================================================
-# Optimized Dockerfile for NVIDIA Blackwell (B200 / GB200 NVL72)
-# CUDA 12.9.1 | PyTorch 2.8+ | SGLang + sgl-kernel + FlashInfer 0.6.x
+# Bleeding-Edge Dockerfile for NVIDIA Blackwell (B200 / GB200 NVL72)
+# CUDA 13.0.1 | PyTorch 2.10+ (nightly) | SGLang + sgl-kernel + FlashInfer 0.6.x
 # Supports: linux/amd64 (B200), linux/arm64 (Grace Blackwell GB200)
 # =============================================================================
 #
-# Key changes:
-#   - CUDA 12.9.1 (12.8.1 does NOT support SM 10.3a; 12.9.1+ required)
+# Key changes from stable build:
+#   - CUDA 13.0.1 (latest CUDA with full Blackwell support)
+#   - Python 3.13 (latest stable Python)
+#   - PyTorch 2.10+ from nightly cu130 index
 #   - sgl-kernel with Blackwell SM100/SM120 kernels
-#   - FlashInfer 0.6.x with cu129 wheels (replaces old cu124/torch2.4)
-#   - Dropped manual FlashAttention-3 build (SGLang uses CUTLASS MLA / 
-#     FlashInfer CuTe DSL attention natively on Blackwell)
+#   - FlashInfer 0.6.x with cu130 wheels
 #   - TORCH_CUDA_ARCH_LIST targets SM 10.0 (B200) + 10.3 (GB200/B300)
 #   - NCCL tuning for NVLink 5th-gen
 # =============================================================================
 
 # -- Build args ---------------------------------------------------------------
-ARG CUDA_VERSION=12.9.1
-ARG PYTHON_VERSION=3.12
+ARG CUDA_VERSION=13.0.1
+ARG PYTHON_VERSION=3.13
 ARG SGL_KERNEL_VERSION=0.3.21
 ARG FLASHINFER_VERSION=0.6.2
 ARG SGLANG_VERSION=0.5.0
@@ -60,7 +60,7 @@ ENV PYTHONUNBUFFERED=1 \
     CUDA_HOME=/usr/local/cuda \
     # ---- Blackwell arch targets ----
     # SM 10.0 = B200 / B100 (sm_100)
-    # SM 10.3 = GB200 / GB300 / B300 (sm_103, needs CUDA 12.9+)
+    # SM 10.3 = GB200 / GB300 / B300 (sm_103, needs CUDA 13.0+)
     TORCH_CUDA_ARCH_LIST="10.0 10.3" \
     # ---- NCCL tuning for NVLink 5th-gen (GB200 NVL72) ----
     NCCL_MNNVL_ENABLE=1 \
@@ -75,13 +75,14 @@ WORKDIR /app
 # -- Virtual environment ------------------------------------------------------
 RUN uv venv /opt/venv --python python${PYTHON_VERSION}
 
-# -- PyTorch (CUDA 12.9) -----------------------------------------------------
-# cu129 index provides Blackwell-compatible PyTorch wheels
+# -- PyTorch (CUDA 13.0 nightly) ---------------------------------------------
+# cu130 nightly index provides latest PyTorch 2.10+ with CUDA 13.0 support
+# Using nightly for bleeding-edge features and Blackwell optimizations
 RUN uv pip install --no-cache \
-    "torch>=2.8.0" \
+    torch \
     packaging \
     ninja \
-    --extra-index-url https://download.pytorch.org/whl/cu129
+    --index-url https://download.pytorch.org/whl/nightly/cu130
 
 # -- sgl-kernel (Blackwell SM100/SM120 optimized CUDA kernels) ----------------
 # This is CRITICAL for Blackwell — provides RMSNorm, fused ops compiled for SM100+
@@ -89,11 +90,18 @@ RUN uv pip install --no-cache \
 RUN uv pip install --no-cache \
     sgl-kernel==${SGL_KERNEL_VERSION}
 
-# -- FlashInfer (cu129 wheels with Blackwell support) -------------------------
+# -- FlashInfer (cu130 wheels with Blackwell support) -------------------------
+# Try cu130 first, fallback to cu129 if not available
 RUN uv pip install --no-cache \
     flashinfer-python==${FLASHINFER_VERSION} \
     flashinfer-cubin \
-    && uv pip install --no-cache \
+    || uv pip install --no-cache \
+    flashinfer-python==${FLASHINFER_VERSION} \
+    flashinfer-cubin
+RUN uv pip install --no-cache \
+    flashinfer-jit-cache==${FLASHINFER_VERSION} \
+    --index-url https://flashinfer.ai/whl/cu130 \
+    || uv pip install --no-cache \
     flashinfer-jit-cache==${FLASHINFER_VERSION} \
     --index-url https://flashinfer.ai/whl/cu129
 
