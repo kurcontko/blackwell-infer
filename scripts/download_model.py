@@ -6,9 +6,9 @@ Downloads and caches models to Network Volume for fast startup
 
 import os
 from pathlib import Path
-from typing import Optional
-from huggingface_hub import snapshot_download
+
 import typer
+from huggingface_hub import snapshot_download
 from rich.console import Console
 
 console = Console()
@@ -36,7 +36,7 @@ def download(
         "--no-cache",
         help="Skip cache, download directly to output_dir (faster but no deduplication)"
     ),
-    token: Optional[str] = typer.Option(
+    token: str | None = typer.Option(
         None,
         "--token", "-t",
         help="HuggingFace token for gated models (or set HF_TOKEN env var)"
@@ -46,7 +46,7 @@ def download(
         "--revision", "-r",
         help="Branch, tag, or commit hash"
     ),
-    allow_patterns: Optional[list[str]] = typer.Option(
+    allow_patterns: list[str] | None = typer.Option(
         None,
         "--allow", "-a",
         help="Only download files matching these patterns (e.g., '*.safetensors')"
@@ -78,9 +78,9 @@ def download(
     console.print(f"[yellow]Output directory: {output_dir}[/yellow]")
     if not no_cache:
         console.print(f"[yellow]Cache directory: {cache_dir}[/yellow]")
-        console.print(f"[dim]  (Cache enables deduplication across model downloads)[/dim]")
+        console.print("[dim]  (Cache enables deduplication across model downloads)[/dim]")
     else:
-        console.print(f"[dim]Cache disabled - direct download only[/dim]")
+        console.print("[dim]Cache disabled - direct download only[/dim]")
     console.print(f"[yellow]Revision: {revision}[/yellow]")
     if ignore_patterns:
         console.print(f"[dim]Ignoring: {', '.join(ignore_patterns)}[/dim]")
@@ -133,9 +133,9 @@ def download(
                 ignore_patterns=ignore_patterns,
             )
 
-        console.print(f"\n[bold green]✓ Model downloaded successfully![/bold green]")
+        console.print("\n[bold green]✓ Model downloaded successfully![/bold green]")
         console.print(f"[green]Location: {local_dir}[/green]")
-        console.print(f"\n[yellow]Set this in your container:[/yellow]")
+        console.print("\n[yellow]Set this in your container:[/yellow]")
         console.print(f"[bold]MODEL_PATH={local_dir}[/bold]\n")
 
     except Exception as e:
@@ -160,7 +160,7 @@ def verify(
         console.print("[green]✓ config.json[/green]")
     else:
         console.print("[red]✗ config.json (missing)[/red]")
-        console.print(f"\n[bold red]✗ Model verification failed - config.json is required[/bold red]")
+        console.print("\n[bold red]✗ Model verification failed - config.json is required[/bold red]")
         raise typer.Exit(code=1)
 
     # Check for tokenizer files (different models use different formats)
@@ -171,7 +171,7 @@ def verify(
         found = [f for f in tokenizer_files if (model_path / f).exists()]
         console.print(f"[green]✓ Tokenizer files: {', '.join(found)}[/green]")
     else:
-        console.print(f"[yellow]⚠ No tokenizer files found (may be required)[/yellow]")
+        console.print("[yellow]⚠ No tokenizer files found (may be required)[/yellow]")
 
     # Check for weight files
     weight_patterns = ["*.safetensors", "*.bin"]
@@ -183,11 +183,11 @@ def verify(
         total_size_gb = sum(f.stat().st_size for f in weight_files) / 1e9
         console.print(f"[green]✓ Found {len(weight_files)} weight files ({total_size_gb:.2f} GB)[/green]")
     else:
-        console.print(f"[red]✗ No weight files found[/red]")
-        console.print(f"\n[bold red]✗ Model verification failed - no weight files[/bold red]")
+        console.print("[red]✗ No weight files found[/red]")
+        console.print("\n[bold red]✗ Model verification failed - no weight files[/bold red]")
         raise typer.Exit(code=1)
 
-    console.print(f"\n[bold green]✓ Model is valid and ready to use![/bold green]\n")
+    console.print("\n[bold green]✓ Model is valid and ready to use![/bold green]\n")
 
 
 if __name__ == "__main__":

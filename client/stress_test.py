@@ -6,21 +6,22 @@ per-request latency percentiles, warmup phase, variable payload shaping.
 """
 
 import asyncio
-import time
 import random
-from pathlib import Path
-from typing import AsyncIterator, Dict, Any, Optional, List
+import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
-import httpx
 import aiofiles
-import orjson
+import httpx
 import numpy as np
+import orjson
+import typer
 from aiolimiter import AsyncLimiter
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
-import typer
 
 console = Console()
 app = typer.Typer()
@@ -38,13 +39,13 @@ class RequestTrace:
     """Per-request timing record"""
     id: str
     latency_s: float
-    ttft_s: Optional[float] = None          # time-to-first-token (streaming only)
-    itl_ms: Optional[List[float]] = None    # inter-token latencies in ms
+    ttft_s: float | None = None          # time-to-first-token (streaming only)
+    itl_ms: list[float] | None = None    # inter-token latencies in ms
     input_tokens: int = 0
     output_tokens: int = 0
     status: str = "success"
-    error: Optional[str] = None             # error message / exception text, if failed
-    status_code: Optional[int] = None       # HTTP status code, if applicable
+    error: str | None = None             # error message / exception text, if failed
+    status_code: int | None = None       # HTTP status code, if applicable
     is_warmup: bool = False
 
 
@@ -60,7 +61,7 @@ class Stats:
     total_output_tokens: int = 0
     start_time: float = 0.0
     request_count: int = 0  # total dispatched (for warmup tracking)
-    traces: List[RequestTrace] = field(default_factory=list)
+    traces: list[RequestTrace] = field(default_factory=list)
 
     # ---- derived metrics ----
 
@@ -80,7 +81,7 @@ class Stats:
     def requests_per_second(self) -> float:
         return self.completed_requests / self.elapsed
 
-    def latency_percentiles(self) -> Dict[str, float]:
+    def latency_percentiles(self) -> dict[str, float]:
         """Compute p50 / p95 / p99 from completed, non-warmup traces."""
         lats = [t.latency_s for t in self.traces if t.status == "success"]
         if not lats:
@@ -92,7 +93,7 @@ class Stats:
             "p99": float(np.percentile(arr, 99)),
         }
 
-    def ttft_percentiles(self) -> Dict[str, float]:
+    def ttft_percentiles(self) -> dict[str, float]:
         vals = [t.ttft_s for t in self.traces if t.ttft_s is not None and t.status == "success"]
         if not vals:
             return {"p50": 0.0, "p95": 0.0, "p99": 0.0}
@@ -103,7 +104,7 @@ class Stats:
             "p99": float(np.percentile(arr, 99)),
         }
 
-    def itl_percentiles(self) -> Dict[str, float]:
+    def itl_percentiles(self) -> dict[str, float]:
         vals = []
         for t in self.traces:
             if t.itl_ms and t.status == "success":
@@ -122,8 +123,8 @@ class Stats:
 # JSONL reader (streaming, low-memory)
 # ---------------------------------------------------------------------------
 
-async def read_jsonl(file_path: Path) -> AsyncIterator[Dict[str, Any]]:
-    async with aiofiles.open(file_path, "r") as f:
+async def read_jsonl(file_path: Path) -> AsyncIterator[dict[str, Any]]:
+    async with aiofiles.open(file_path) as f:
         async for line in f:
             stripped = line.strip()
             if stripped:
@@ -132,7 +133,7 @@ async def read_jsonl(file_path: Path) -> AsyncIterator[Dict[str, Any]]:
 
 async def count_lines(file_path: Path) -> int:
     count = 0
-    async with aiofiles.open(file_path, "r") as f:
+    async with aiofiles.open(file_path) as f:
         async for line in f:
             if line.strip():
                 count += 1
@@ -160,7 +161,7 @@ SYNTHETIC_PROMPTS = [
 def generate_synthetic_tasks(
     num_tasks: int,
     prompt_len_distribution: str = "mixed",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Generate synthetic tasks with variable prompt lengths and max_tokens.
     prompt_len_distribution: 'short' | 'long' | 'mixed'
@@ -208,7 +209,7 @@ def generate_synthetic_tasks(
 async def process_request_batch(
     client: httpx.AsyncClient,
     api_url: str,
-    task: Dict[str, Any],
+    task: dict[str, Any],
     max_retries: int = 3,
 ) -> RequestTrace:
     """Non-streaming request with full latency tracking."""
@@ -266,7 +267,7 @@ async def process_request_batch(
 async def process_request_stream(
     client: httpx.AsyncClient,
     api_url: str,
-    task: Dict[str, Any],
+    task: dict[str, Any],
     max_retries: int = 3,
 ) -> RequestTrace:
     """Streaming SSE request with TTFT and inter-token latency tracking."""
@@ -282,9 +283,9 @@ async def process_request_stream(
 
     for attempt in range(max_retries):
         t0 = time.perf_counter()
-        ttft: Optional[float] = None
-        itl_timestamps: List[float] = []
-        output_text_chunks: List[str] = []
+        ttft: float | None = None
+        itl_timestamps: list[float] = []
+        output_text_chunks: list[str] = []
         input_tokens = 0
         output_tokens = 0
 
@@ -327,7 +328,7 @@ async def process_request_stream(
             latency = time.perf_counter() - t0
 
             # Compute inter-token latencies
-            itl_ms: List[float] = []
+            itl_ms: list[float] = []
             for j in range(1, len(itl_timestamps)):
                 itl_ms.append((itl_timestamps[j] - itl_timestamps[j - 1]) * 1000.0)
 
@@ -377,7 +378,7 @@ async def process_request_stream(
 
 async def producer(
     queue: asyncio.Queue,
-    tasks: AsyncIterator[Dict[str, Any]] | List[Dict[str, Any]],
+    tasks: AsyncIterator[dict[str, Any]] | list[dict[str, Any]],
     num_consumers: int,
 ):
     """Feed tasks into the bounded queue. Send sentinel per consumer when done."""
@@ -512,7 +513,7 @@ def generate_stats_table(stats: Stats, streaming: bool) -> Table:
 
 async def result_writer(
     results_queue: asyncio.Queue,
-    output_file: Optional[Path],
+    output_file: Path | None,
     total: int,
 ):
     """Drain results queue and write to JSONL."""
@@ -562,11 +563,11 @@ def run(
         "--api-url", "-u",
         help="OpenAI-compatible chat completions endpoint",
     ),
-    input_file: Optional[Path] = typer.Option(
+    input_file: Path | None = typer.Option(
         None, "--input", "-i",
         help="Input JSONL file. If omitted, synthetic prompts are generated.",
     ),
-    output_file: Optional[Path] = typer.Option(
+    output_file: Path | None = typer.Option(
         None, "--output", "-o",
         help="Output JSONL with per-request traces.",
     ),
@@ -634,8 +635,8 @@ def run(
 
 async def _run_async(
     api_url: str,
-    input_file: Optional[Path],
-    output_file: Optional[Path],
+    input_file: Path | None,
+    output_file: Path | None,
     num_synthetic: int,
     prompt_distribution: str,
     concurrent_requests: int,
@@ -661,7 +662,7 @@ async def _run_async(
     # ---- Lock for atomic stats updates ----
     stats_lock = asyncio.Lock()
 
-    console.print(f"\n[bold green]Stress Test Config[/bold green]")
+    console.print("\n[bold green]Stress Test Config[/bold green]")
     console.print(f"  API:          {api_url}")
     console.print(f"  Streaming:    {streaming}")
     console.print(f"  Concurrency:  {concurrent_requests}")

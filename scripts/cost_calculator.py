@@ -4,10 +4,10 @@ Cost and throughput calculator for Blackwell HyperInfer
 Estimates time and cost for processing large token volumes
 """
 
+
 import typer
 from rich.console import Console
 from rich.table import Table
-from typing import Optional
 
 console = Console()
 app = typer.Typer()
@@ -47,7 +47,7 @@ def calculate(
         "--gpu", "-g",
         help=f"GPU configuration: {', '.join(GPU_CONFIGS.keys())}"
     ),
-    price_per_hour: Optional[float] = typer.Option(
+    price_per_hour: float | None = typer.Option(
         None,
         "--price", "-p",
         help="Custom price per hour (overrides default)"
