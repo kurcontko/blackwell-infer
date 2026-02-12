@@ -9,7 +9,6 @@ from pathlib import Path
 from huggingface_hub import snapshot_download
 import typer
 from rich.console import Console
-from rich.progress import Progress
 
 console = Console()
 app = typer.Typer()
@@ -29,46 +28,108 @@ def download(
     cache_dir: Path = typer.Option(
         Path("/workspace/hf_cache"),
         "--cache-dir", "-c",
-        help="HuggingFace cache directory"
+        help="HuggingFace cache directory (enables deduplication across models)"
+    ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="Skip cache, download directly to output_dir (faster but no deduplication)"
+    ),
+    token: str = typer.Option(
+        None,
+        "--token", "-t",
+        help="HuggingFace token for gated models (or set HF_TOKEN env var)"
+    ),
+    revision: str = typer.Option(
+        "main",
+        "--revision", "-r",
+        help="Branch, tag, or commit hash"
+    ),
+    allow_patterns: list[str] = typer.Option(
+        None,
+        "--allow", "-a",
+        help="Only download files matching these patterns (e.g., '*.safetensors')"
+    ),
+    ignore_patterns: list[str] = typer.Option(
+        ["*.gguf", "*.md", "consolidated.*"],
+        "--ignore", "-i",
+        help="Skip files matching these patterns"
     ),
 ):
     """
     Download a model from HuggingFace Hub to local storage.
 
     Optimized for large models (100GB+) with resumable downloads.
+    By default uses cache_dir for deduplication across models.
+    Use --no-cache for direct download (faster, no deduplication).
     """
 
-    # Enable HF Transfer for faster downloads
-    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+    # Enable HF Transfer for faster downloads (3-5x speedup)
+    try:
+        import hf_transfer  # noqa: F401
+        os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+        console.print("[green]✓ hf_transfer enabled (fast downloads)[/green]")
+    except ImportError:
+        console.print("[yellow]⚠ hf_transfer not installed — falling back to default[/yellow]")
+        console.print("[dim]  pip install hf_transfer for 3-5x speedups[/dim]")
 
     console.print(f"\n[bold green]Downloading model: {model_id}[/bold green]")
     console.print(f"[yellow]Output directory: {output_dir}[/yellow]")
-    console.print(f"[yellow]Cache directory: {cache_dir}[/yellow]\n")
+    if not no_cache:
+        console.print(f"[yellow]Cache directory: {cache_dir}[/yellow]")
+        console.print(f"[dim]  (Cache enables deduplication across model downloads)[/dim]")
+    else:
+        console.print(f"[dim]Cache disabled - direct download only[/dim]")
+    console.print(f"[yellow]Revision: {revision}[/yellow]")
+    if ignore_patterns:
+        console.print(f"[dim]Ignoring: {', '.join(ignore_patterns)}[/dim]")
+    if allow_patterns:
+        console.print(f"[dim]Only downloading: {', '.join(allow_patterns)}[/dim]")
+    console.print()
 
     # Create directories
     output_dir.mkdir(parents=True, exist_ok=True)
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    if not no_cache:
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
     # Extract model name for local directory
     model_name = model_id.split("/")[-1].lower()
     local_dir = output_dir / model_name
 
-    try:
-        with Progress() as progress:
-            task = progress.add_task(
-                f"[cyan]Downloading {model_name}...",
-                total=None
-            )
+    # Get token from param or env
+    hf_token = token or os.environ.get("HF_TOKEN")
 
+    try:
+        console.print("[cyan]Downloading... (progress will appear below)[/cyan]\n")
+
+        if no_cache:
+            # Direct download - faster, no deduplication
+            snapshot_download(
+                repo_id=model_id,
+                local_dir=str(local_dir),
+                revision=revision,
+                resume_download=True,
+                max_workers=8,
+                local_dir_use_symlinks=False,
+                token=hf_token,
+                allow_patterns=allow_patterns or None,
+                ignore_patterns=ignore_patterns,
+            )
+        else:
+            # Use cache for deduplication (network volume persistent storage)
+            # Try symlinks first, fall back to copying if symlinks fail
             snapshot_download(
                 repo_id=model_id,
                 local_dir=str(local_dir),
                 cache_dir=str(cache_dir),
+                revision=revision,
                 resume_download=True,
                 max_workers=8,
+                local_dir_use_symlinks="auto",  # Auto-detect symlink support
+                token=hf_token,
+                allow_patterns=allow_patterns or None,
+                ignore_patterns=ignore_patterns,
             )
-
-            progress.update(task, completed=True)
 
         console.print(f"\n[bold green]✓ Model downloaded successfully![/bold green]")
         console.print(f"[green]Location: {local_dir}[/green]")
@@ -92,21 +153,26 @@ def verify(
     """
     console.print(f"\n[bold]Verifying model at: {model_path}[/bold]\n")
 
-    required_files = ["config.json", "tokenizer.json"]
-    weight_patterns = ["*.safetensors", "*.bin"]
+    # config.json is always required
+    if (model_path / "config.json").exists():
+        console.print("[green]✓ config.json[/green]")
+    else:
+        console.print("[red]✗ config.json (missing)[/red]")
+        console.print(f"\n[bold red]✗ Model verification failed - config.json is required[/bold red]")
+        raise typer.Exit(code=1)
 
-    found_files = []
-    missing_files = []
+    # Check for tokenizer files (different models use different formats)
+    tokenizer_files = ["tokenizer.json", "tokenizer.model", "tokenizer_config.json"]
+    has_tokenizer = any((model_path / f).exists() for f in tokenizer_files)
 
-    for file in required_files:
-        if (model_path / file).exists():
-            found_files.append(file)
-            console.print(f"[green]✓ {file}[/green]")
-        else:
-            missing_files.append(file)
-            console.print(f"[red]✗ {file} (missing)[/red]")
+    if has_tokenizer:
+        found = [f for f in tokenizer_files if (model_path / f).exists()]
+        console.print(f"[green]✓ Tokenizer files: {', '.join(found)}[/green]")
+    else:
+        console.print(f"[yellow]⚠ No tokenizer files found (may be required)[/yellow]")
 
     # Check for weight files
+    weight_patterns = ["*.safetensors", "*.bin"]
     weight_files = []
     for pattern in weight_patterns:
         weight_files.extend(model_path.glob(pattern))
@@ -116,14 +182,10 @@ def verify(
         console.print(f"[green]✓ Found {len(weight_files)} weight files ({total_size_gb:.2f} GB)[/green]")
     else:
         console.print(f"[red]✗ No weight files found[/red]")
-        missing_files.append("weight files")
-
-    if missing_files:
-        console.print(f"\n[bold red]✗ Model verification failed[/bold red]")
-        console.print(f"[yellow]Missing: {', '.join(missing_files)}[/yellow]")
+        console.print(f"\n[bold red]✗ Model verification failed - no weight files[/bold red]")
         raise typer.Exit(code=1)
-    else:
-        console.print(f"\n[bold green]✓ Model is valid and ready to use![/bold green]\n")
+
+    console.print(f"\n[bold green]✓ Model is valid and ready to use![/bold green]\n")
 
 
 if __name__ == "__main__":

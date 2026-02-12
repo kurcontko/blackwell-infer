@@ -58,8 +58,8 @@ docker pull ghcr.io/kurcontko/blackwell-infer:sglang
 - **Port:** 8000
 - **Env:**
   ```
-  MODEL_PATH=/workspace/models/qwen-235b-fp4
-  QUANTIZATION=fp4
+  MODEL_PATH=/workspace/models/qwen2.5-235b-instruct-fp4
+  QUANTIZATION=modelopt_fp4
   TP_SIZE=2
   ```
 
@@ -97,8 +97,8 @@ uv run client/stress_test.py \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MODEL_PATH` | `/workspace/models/qwen-235b-fp4` | Model location |
-| `QUANTIZATION` | `fp4` | Quantization (fp4/fp8/int4) |
+| `MODEL_PATH` | `/workspace/models/qwen2.5-235b-instruct-fp4` | Model location |
+| `QUANTIZATION` | `modelopt_fp4` | Quantization (modelopt_fp4/fp8/int4) |
 | `TP_SIZE` | Auto | Tensor parallelism |
 | `MAX_REQUESTS` | `1024` | Concurrent requests |
 
