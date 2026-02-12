@@ -59,6 +59,7 @@ class Stats:
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     start_time: float = 0.0
+    request_count: int = 0  # total dispatched (for warmup tracking)
     traces: List[RequestTrace] = field(default_factory=list)
 
     # ---- derived metrics ----
@@ -378,7 +379,8 @@ async def consumer(
     stats: Stats,
     results_queue: asyncio.Queue,
     streaming: bool,
-    warmup_ids: set,
+    stats_lock: asyncio.Lock,
+    warmup_threshold: int,
     max_retries: int = 3,
 ):
     """Pull tasks from queue, process, push results."""
@@ -388,6 +390,12 @@ async def consumer(
             queue.task_done()
             break
 
+        # Determine if warmup by incrementing request counter atomically
+        async with stats_lock:
+            stats.request_count += 1
+            request_num = stats.request_count
+        is_warmup = request_num <= warmup_threshold
+
         # Acquire rate limit permit before dispatching (don't hold during request)
         await limiter.acquire()
 
@@ -396,24 +404,23 @@ async def consumer(
         else:
             trace = await process_request_batch(client, api_url, task, max_retries)
 
-        # Mark warmup traces
-        is_warmup = trace.id in warmup_ids
         trace.is_warmup = is_warmup
 
         # Update stats - warmup tracked separately
-        if is_warmup:
-            if trace.status == "success":
-                stats.warmup_completed += 1
+        async with stats_lock:
+            if is_warmup:
+                if trace.status == "success":
+                    stats.warmup_completed += 1
+                else:
+                    stats.warmup_failed += 1
             else:
-                stats.warmup_failed += 1
-        else:
-            stats.traces.append(trace)
-            if trace.status == "success":
-                stats.completed_requests += 1
-                stats.total_input_tokens += trace.input_tokens
-                stats.total_output_tokens += trace.output_tokens
-            else:
-                stats.failed_requests += 1
+                stats.traces.append(trace)
+                if trace.status == "success":
+                    stats.completed_requests += 1
+                    stats.total_input_tokens += trace.input_tokens
+                    stats.total_output_tokens += trace.output_tokens
+                else:
+                    stats.failed_requests += 1
 
         await results_queue.put(trace)
         queue.task_done()
@@ -618,8 +625,8 @@ async def _run_async(
 
     stats.total_requests = total
 
-    # ---- Warmup task IDs ----
-    warmup_ids = {str(i) for i in range(warmup)}
+    # ---- Lock for atomic stats updates ----
+    stats_lock = asyncio.Lock()
 
     console.print(f"\n[bold green]Stress Test Config[/bold green]")
     console.print(f"  API:          {api_url}")
@@ -660,7 +667,7 @@ async def _run_async(
         consumers = [
             asyncio.create_task(consumer(
                 task_queue, client, api_url, limiter, stats,
-                results_queue, streaming, warmup_ids, max_retries,
+                results_queue, streaming, stats_lock, warmup, max_retries,
             ))
             for _ in range(concurrent_requests)
         ]
