@@ -1,4 +1,5 @@
 """Tests for download_model.py script"""
+
 from pathlib import Path
 
 

@@ -1,4 +1,5 @@
 """Integration tests requiring mocked HTTP calls"""
+
 import asyncio
 
 import pytest

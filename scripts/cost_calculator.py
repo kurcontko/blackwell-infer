@@ -4,7 +4,6 @@ Cost and throughput calculator for Blackwell HyperInfer
 Estimates time and cost for processing large token volumes
 """
 
-
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -17,8 +16,8 @@ app = typer.Typer()
 GPU_CONFIGS = {
     "2xB200": {
         "vram_gb": 360,
-        "throughput_low": 8000,    # Conservative estimate (FP8)
-        "throughput_high": 12000,   # Optimistic estimate (FP4 + FlashInfer)
+        "throughput_low": 8000,  # Conservative estimate (FP8)
+        "throughput_high": 12000,  # Optimistic estimate (FP4 + FlashInfer)
         "runpod_price_per_hour": 10.0,  # Approximate as of 2026
     },
     "2xH200": {
@@ -38,25 +37,12 @@ GPU_CONFIGS = {
 
 @app.command()
 def calculate(
-    total_tokens: int = typer.Argument(
-        ...,
-        help="Total number of tokens to process (e.g., 2000000000 for 2B)"
-    ),
-    gpu_config: str = typer.Option(
-        "2xB200",
-        "--gpu", "-g",
-        help=f"GPU configuration: {', '.join(GPU_CONFIGS.keys())}"
-    ),
+    total_tokens: int = typer.Argument(..., help="Total number of tokens to process (e.g., 2000000000 for 2B)"),
+    gpu_config: str = typer.Option("2xB200", "--gpu", "-g", help=f"GPU configuration: {', '.join(GPU_CONFIGS.keys())}"),
     price_per_hour: float | None = typer.Option(
-        None,
-        "--price", "-p",
-        help="Custom price per hour (overrides default)"
+        None, "--price", "-p", help="Custom price per hour (overrides default)"
     ),
-    optimistic: bool = typer.Option(
-        False,
-        "--optimistic",
-        help="Use optimistic throughput estimates"
-    ),
+    optimistic: bool = typer.Option(False, "--optimistic", help="Use optimistic throughput estimates"),
 ):
     """
     Calculate estimated time and cost for processing tokens.
@@ -106,15 +92,19 @@ def calculate(
 
     # Comparison with API providers
     openai_cost_per_million = 15.0  # GPT-4 Turbo approximate
-    claude_cost_per_million = 15.0   # Claude Sonnet approximate
+    claude_cost_per_million = 15.0  # Claude Sonnet approximate
 
-    savings_vs_openai = ((openai_cost_per_million * (total_tokens / 1_000_000)) - total_cost)
-    savings_vs_claude = ((claude_cost_per_million * (total_tokens / 1_000_000)) - total_cost)
+    savings_vs_openai = (openai_cost_per_million * (total_tokens / 1_000_000)) - total_cost
+    savings_vs_claude = (claude_cost_per_million * (total_tokens / 1_000_000)) - total_cost
 
     if savings_vs_openai > 0:
-        console.print(f"[green]💰 Savings vs OpenAI API: ${savings_vs_openai:,.2f} ({savings_vs_openai / total_cost * 100:.0f}x cheaper)[/green]")
+        console.print(
+            f"[green]💰 Savings vs OpenAI API: ${savings_vs_openai:,.2f} ({savings_vs_openai / total_cost * 100:.0f}x cheaper)[/green]"
+        )
     if savings_vs_claude > 0:
-        console.print(f"[green]💰 Savings vs Claude API: ${savings_vs_claude:,.2f} ({savings_vs_claude / total_cost * 100:.0f}x cheaper)[/green]")
+        console.print(
+            f"[green]💰 Savings vs Claude API: ${savings_vs_claude:,.2f} ({savings_vs_claude / total_cost * 100:.0f}x cheaper)[/green]"
+        )
 
     console.print("\n[yellow]Note: Estimates assume continuous 100% GPU utilization.[/yellow]")
     console.print("[yellow]Actual costs may vary based on setup time, failures, and network latency.[/yellow]\n")
@@ -146,9 +136,9 @@ def compare():
             name,
             f"{config['vram_gb']} GB",
             f"{throughput:,} tok/s",
-            f"{hours:.1f}h ({hours/24:.1f}d)",
+            f"{hours:.1f}h ({hours / 24:.1f}d)",
             f"${cost:,.2f}",
-            f"${cost_per_million:.4f}"
+            f"${cost_per_million:.4f}",
         )
 
     console.print(table)

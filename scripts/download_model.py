@@ -17,44 +17,28 @@ app = typer.Typer()
 
 @app.command()
 def download(
-    model_id: str = typer.Argument(
-        ...,
-        help="HuggingFace model ID (e.g., Qwen/Qwen2.5-235B-Instruct-FP4)"
-    ),
+    model_id: str = typer.Argument(..., help="HuggingFace model ID (e.g., Qwen/Qwen2.5-235B-Instruct-FP4)"),
     output_dir: Path = typer.Option(
-        Path("/workspace/models"),
-        "--output-dir", "-o",
-        help="Directory to save model (should be on Network Volume)"
+        Path("/workspace/models"), "--output-dir", "-o", help="Directory to save model (should be on Network Volume)"
     ),
     cache_dir: Path = typer.Option(
         Path("/workspace/hf_cache"),
-        "--cache-dir", "-c",
-        help="HuggingFace cache directory (enables deduplication across models)"
+        "--cache-dir",
+        "-c",
+        help="HuggingFace cache directory (enables deduplication across models)",
     ),
     no_cache: bool = typer.Option(
-        False,
-        "--no-cache",
-        help="Skip cache, download directly to output_dir (faster but no deduplication)"
+        False, "--no-cache", help="Skip cache, download directly to output_dir (faster but no deduplication)"
     ),
     token: str | None = typer.Option(
-        None,
-        "--token", "-t",
-        help="HuggingFace token for gated models (or set HF_TOKEN env var)"
+        None, "--token", "-t", help="HuggingFace token for gated models (or set HF_TOKEN env var)"
     ),
-    revision: str = typer.Option(
-        "main",
-        "--revision", "-r",
-        help="Branch, tag, or commit hash"
-    ),
+    revision: str = typer.Option("main", "--revision", "-r", help="Branch, tag, or commit hash"),
     allow_patterns: list[str] | None = typer.Option(
-        None,
-        "--allow", "-a",
-        help="Only download files matching these patterns (e.g., '*.safetensors')"
+        None, "--allow", "-a", help="Only download files matching these patterns (e.g., '*.safetensors')"
     ),
     ignore_patterns: list[str] = typer.Option(
-        ["*.gguf", "*.md", "consolidated.*"],
-        "--ignore", "-i",
-        help="Skip files matching these patterns"
+        ["*.gguf", "*.md", "consolidated.*"], "--ignore", "-i", help="Skip files matching these patterns"
     ),
 ):
     """
@@ -68,6 +52,7 @@ def download(
     # Enable HF Transfer for faster downloads (3-5x speedup)
     try:
         import hf_transfer  # noqa: F401
+
         os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
         console.print("[green]✓ hf_transfer enabled (fast downloads)[/green]")
     except ImportError:
@@ -145,10 +130,7 @@ def download(
 
 @app.command()
 def verify(
-    model_path: Path = typer.Argument(
-        ...,
-        help="Path to model directory to verify"
-    ),
+    model_path: Path = typer.Argument(..., help="Path to model directory to verify"),
 ):
     """
     Verify that a model directory is valid and complete.

@@ -1,4 +1,5 @@
 """Tests for stress_test.py client"""
+
 import asyncio
 
 import pytest
@@ -73,9 +74,7 @@ class TestStats:
         stats = Stats()
         # Add some sample traces
         for i in range(100):
-            stats.traces.append(
-                RequestTrace(id=f"trace-{i}", latency_s=i * 0.01, status="success")
-            )
+            stats.traces.append(RequestTrace(id=f"trace-{i}", latency_s=i * 0.01, status="success"))
 
         percentiles = stats.latency_percentiles()
         assert "p50" in percentiles
