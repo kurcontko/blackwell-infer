@@ -17,13 +17,13 @@ install:
 
 build:
 	@echo "Building Docker image for local architecture..."
-	docker build -f docker/Dockerfile -t blackwell-hyperinfer:latest .
+	docker build -f docker/Dockerfile -t blackwell-infer:latest .
 
 build-multi:
 	@echo "Building multi-arch Docker image..."
 	docker buildx build --platform linux/amd64,linux/arm64 \
 		-f docker/Dockerfile \
-		-t blackwell-hyperinfer:latest \
+		-t blackwell-infer:latest \
 		--push .
 
 test:
