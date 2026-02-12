@@ -15,7 +15,7 @@
 # =============================================================================
 
 # -- Build args ---------------------------------------------------------------
-ARG CUDA_VERSION=12.9.1
+ARG CUDA_VERSION=12.8.1
 ARG PYTHON_VERSION=3.12
 ARG SGL_KERNEL_VERSION=0.3.21
 ARG FLASHINFER_VERSION=0.6.2
@@ -75,13 +75,13 @@ WORKDIR /app
 # -- Virtual environment ------------------------------------------------------
 RUN uv venv /opt/venv --python python${PYTHON_VERSION}
 
-# -- PyTorch (CUDA 12.9) -----------------------------------------------------
-# cu129 index provides Blackwell-compatible PyTorch wheels
+# -- PyTorch (CUDA 12.8) -----------------------------------------------------
+# cu128 index provides Blackwell-compatible PyTorch wheels
 RUN uv pip install --no-cache \
-    "torch>=2.8.0" \
+    "torch>=2.5.0" \
     packaging \
     ninja \
-    --extra-index-url https://download.pytorch.org/whl/cu129
+    --extra-index-url https://download.pytorch.org/whl/cu128
 
 # -- sgl-kernel (Blackwell SM100/SM120 optimized CUDA kernels) ----------------
 # This is CRITICAL for Blackwell — provides RMSNorm, fused ops compiled for SM100+
@@ -89,13 +89,13 @@ RUN uv pip install --no-cache \
 RUN uv pip install --no-cache \
     sgl-kernel==${SGL_KERNEL_VERSION}
 
-# -- FlashInfer (cu129 wheels with Blackwell support) -------------------------
+# -- FlashInfer (cu128 wheels with Blackwell support) -------------------------
 RUN uv pip install --no-cache \
     flashinfer-python==${FLASHINFER_VERSION} \
     flashinfer-cubin \
     && uv pip install --no-cache \
     flashinfer-jit-cache==${FLASHINFER_VERSION} \
-    --index-url https://flashinfer.ai/whl/cu129
+    --index-url https://flashinfer.ai/whl/cu128
 
 # -- SGLang with Blackwell extras --------------------------------------------
 RUN uv pip install --no-cache \
