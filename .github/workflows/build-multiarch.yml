@@ -1,0 +1,108 @@
+name: Build Multi-Arch Docker Image
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-sglang:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (SGLang)
+        id: meta-sglang
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=sglang
+            type=raw,value=sglang-{{sha}}
+            type=ref,event=branch,suffix=-sglang
+            type=semver,pattern={{version}},suffix=-sglang
+
+      - name: Build and push SGLang image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker/sglang
+          file: ./docker/sglang/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-sglang.outputs.tags }}
+          labels: ${{ steps.meta-sglang.outputs.labels }}
+          cache-from: type=gha,scope=sglang
+          cache-to: type=gha,mode=max,scope=sglang
+
+  build-vllm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (vLLM)
+        id: meta-vllm
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=vllm
+            type=raw,value=vllm-{{sha}}
+            type=raw,value=latest
+            type=ref,event=branch,suffix=-vllm
+            type=semver,pattern={{version}},suffix=-vllm
+
+      - name: Build and push vLLM image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker/vllm
+          file: ./docker/vllm/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-vllm.outputs.tags }}
+          labels: ${{ steps.meta-vllm.outputs.labels }}
+          cache-from: type=gha,scope=vllm
+          cache-to: type=gha,mode=max,scope=vllm

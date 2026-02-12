@@ -1,0 +1,28 @@
+{
+  "name": "2xB200 FP4 Maximum Throughput",
+  "description": "Optimized configuration for 2x NVIDIA B200 GPUs with FP4 quantization",
+  "hardware": {
+    "gpu_count": 2,
+    "gpu_model": "B200",
+    "total_vram_gb": 360,
+    "nvlink": true
+  },
+  "model": {
+    "quantization": "fp4",
+    "kv_cache_dtype": "fp8_e5m2"
+  },
+  "server": {
+    "tp_size": 2,
+    "mem_fraction_static": 0.95,
+    "max_running_requests": 1024,
+    "context_length": 32768,
+    "chunked_prefill_size": 8192,
+    "schedule_policy": "lpm",
+    "enable_flashinfer": true
+  },
+  "performance": {
+    "expected_throughput_tokens_per_sec": 12000,
+    "max_batch_size": 512,
+    "notes": "Best for maximum throughput. Use for batch processing billions of tokens."
+  }
+}

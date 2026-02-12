@@ -1,0 +1,99 @@
+# docker-compose.yml — Dual backend support for Blackwell HyperInfer
+# Usage:
+#   docker compose --profile vllm up -d    # Start vLLM backend
+#   docker compose --profile sglang up -d  # Start SGLang backend
+
+services:
+  # vLLM backend (recommended for most users)
+  vllm:
+    image: ghcr.io/kurcontko/blackwell-infer:vllm
+    container_name: blackwell-vllm
+    runtime: nvidia
+    ipc: host
+    shm_size: "32g"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ${NETWORK_VOLUME_PATH:-./workspace}:/workspace
+
+    environment:
+      - MODEL_PATH=${MODEL_PATH:-/workspace/models/qwen-235b-fp4}
+      - QUANTIZATION=${QUANTIZATION:-fp4}
+      - KV_CACHE_DTYPE=${KV_CACHE_DTYPE:-fp8_e5m2}
+      - TP_SIZE=${TP_SIZE:-2}
+      - MEM_FRACTION=${MEM_FRACTION:-0.95}
+      - MAX_REQUESTS=${MAX_REQUESTS:-1024}
+      - CONTEXT_LENGTH=${CONTEXT_LENGTH:-32768}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - NCCL_DEBUG=${NCCL_DEBUG:-WARN}
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
+    restart: unless-stopped
+    profiles: ["vllm"]
+
+  # SGLang backend (maximum Blackwell optimization)
+  sglang:
+    image: ghcr.io/kurcontko/blackwell-infer:sglang
+    container_name: blackwell-sglang
+    runtime: nvidia
+    ipc: host
+    shm_size: "32g"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ${NETWORK_VOLUME_PATH:-./workspace}:/workspace
+
+    environment:
+      - MODEL_PATH=${MODEL_PATH:-/workspace/models/qwen-235b-fp4}
+      - QUANTIZATION=${QUANTIZATION:-fp4}
+      - KV_CACHE_DTYPE=${KV_CACHE_DTYPE:-fp8_e5m2}
+      - TP_SIZE=${TP_SIZE:-2}
+      - MEM_FRACTION=${MEM_FRACTION:-0.95}
+      - MAX_REQUESTS=${MAX_REQUESTS:-1024}
+      - CONTEXT_LENGTH=${CONTEXT_LENGTH:-32768}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - NCCL_DEBUG=${NCCL_DEBUG:-WARN}
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
+    restart: unless-stopped
+    profiles: ["sglang"]
