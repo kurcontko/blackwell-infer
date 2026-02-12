@@ -3,7 +3,9 @@
 High-throughput LLM inference on NVIDIA Blackwell B200 GPUs.
 
 [![Build Multi-Arch](https://github.com/kurcontko/blackwell-infer/actions/workflows/build-multiarch.yml/badge.svg)](https://github.com/kurcontko/blackwell-infer/actions)
+[![Test & Lint](https://github.com/kurcontko/blackwell-infer/actions/workflows/test.yml/badge.svg)](https://github.com/kurcontko/blackwell-infer/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
 ---
 
@@ -117,6 +119,49 @@ uv run client/stress_test.py \
 | `MEM_FRACTION` | `0.95` | Fraction of GPU memory to use |
 | `MAX_REQUESTS` | `1024` | Concurrent requests |
 | `CONTEXT_LENGTH` | `32768` | Maximum context length |
+
+---
+
+## Development
+
+### Running Tests
+
+```bash
+# Install dependencies
+make install
+
+# Run all tests
+make test
+
+# Run tests with coverage
+make test-cov
+
+# Run linter
+make lint
+
+# Format code
+make format
+```
+
+See [TESTING.md](TESTING.md) for detailed testing documentation.
+
+### Pre-commit Hooks
+
+Install pre-commit hooks for automatic code quality checks:
+
+```bash
+make pre-commit
+```
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests and linting (`make test lint`)
+5. Commit your changes (pre-commit hooks will run automatically)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
 ---
 
